@@ -1,0 +1,14 @@
+{
+    "id": "codexBar",
+    "name": "CodexBar",
+    "description": "AI coding assistant usage monitor - shows Claude, Codex, Cursor, Copilot, and Kimi usage in your bar",
+    "version": "0.1.0",
+    "author": "gabriel",
+    "type": "widget",
+    "capabilities": ["dankbar-widget", "monitoring"],
+    "component": "./CodexBarWidget.qml",
+    "icon": "monitoring",
+    "settings": "./CodexBarSettings.qml",
+    "requires": ["bun", "niri"],
+    "permissions": ["settings_read", "settings_write", "process", "network"]
+}

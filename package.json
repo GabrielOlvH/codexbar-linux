@@ -1,0 +1,13 @@
+{
+  "name": "codexbar-linux",
+  "version": "0.1.0",
+  "description": "AI coding assistant usage stats for DankBar",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "typecheck": "tsgo"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
