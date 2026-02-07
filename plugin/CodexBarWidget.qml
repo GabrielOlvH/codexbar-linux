@@ -21,12 +21,16 @@ PluginComponent {
 
     // Provider metadata
     readonly property var providerIcons: ({
-        "claude": "smart_toy",
-        "codex": "code",
-        "cursor": "edit_note",
-        "copilot": "hub",
-        "kimi": "auto_awesome"
+        "claude": "icons/ProviderIcon-claude.svg",
+        "codex": "icons/ProviderIcon-codex.svg",
+        "cursor": "icons/ProviderIcon-cursor.svg",
+        "copilot": "icons/ProviderIcon-copilot.svg",
+        "kimi": "icons/ProviderIcon-kimi.svg"
     })
+
+    function providerIconSource(id) {
+        return providerIcons[id] ? Qt.resolvedUrl(providerIcons[id]) : ""
+    }
 
     readonly property var providerColors: ({
         "claude": "#D4793C",
@@ -128,7 +132,9 @@ PluginComponent {
                 if (exitCode === 0 && stdout.trim()) {
                     try {
                         const data = JSON.parse(stdout)
-                        root.activeProvider = data.active_provider || ""
+                        if (data.active_provider) {
+                            root.activeProvider = data.active_provider
+                        }
                     } catch (e) {}
                 }
             },
@@ -147,9 +153,19 @@ PluginComponent {
 
             DankIcon {
                 anchors.verticalCenter: parent.verticalCenter
-                name: root.loading ? "hourglass_empty" : (root.providerIcons[pillRow.providerId] || "monitoring")
-                color: root.loading ? Theme.surfaceVariantText : root.usageColor(pillRow.pct)
+                name: "hourglass_empty"
+                color: Theme.surfaceVariantText
                 size: Theme.fontSizeLarge
+                visible: root.loading
+            }
+
+            Image {
+                anchors.verticalCenter: parent.verticalCenter
+                source: root.providerIconSource(pillRow.providerId)
+                sourceSize: Qt.size(Theme.fontSizeLarge, Theme.fontSizeLarge)
+                width: Theme.fontSizeLarge
+                height: Theme.fontSizeLarge
+                visible: !root.loading
             }
 
             StyledText {
@@ -172,9 +188,19 @@ PluginComponent {
 
             DankIcon {
                 anchors.horizontalCenter: parent.horizontalCenter
-                name: root.loading ? "hourglass_empty" : (root.providerIcons[providerId] || "monitoring")
-                color: root.loading ? Theme.surfaceVariantText : root.usageColor(pct)
+                name: "hourglass_empty"
+                color: Theme.surfaceVariantText
                 size: Theme.fontSizeMedium
+                visible: root.loading
+            }
+
+            Image {
+                anchors.horizontalCenter: parent.horizontalCenter
+                source: root.providerIconSource(providerId)
+                sourceSize: Qt.size(Theme.fontSizeMedium, Theme.fontSizeMedium)
+                width: Theme.fontSizeMedium
+                height: Theme.fontSizeMedium
+                visible: !root.loading
             }
 
             StyledText {
@@ -191,7 +217,7 @@ PluginComponent {
         PopoutComponent {
             id: popout
 
-            headerText: "CodexBar"
+            headerText: ""
             showCloseButton: true
 
             Item {
@@ -288,6 +314,14 @@ PluginComponent {
 
                                             Row {
                                                 spacing: Theme.spacingXS
+
+                                                Image {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    source: root.providerIconSource(modelData.id)
+                                                    sourceSize: Qt.size(16, 16)
+                                                    width: 16
+                                                    height: 16
+                                                }
 
                                                 StyledText {
                                                     text: modelData.name
