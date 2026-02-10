@@ -36,6 +36,47 @@ async function getChildPids(pid: number): Promise<number[]> {
   return [...childPids]
 }
 
+async function getTmuxPaneProcessNames(clientPid: number): Promise<string[]> {
+  try {
+    const clientsProc = Bun.spawn(["tmux", "list-clients", "-F", "#{client_pid} #{session_name}"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const clientsOutput = await new Response(clientsProc.stdout).text()
+    if ((await clientsProc.exited) !== 0) return []
+
+    let sessionName: string | null = null
+    for (const line of clientsOutput.trim().split("\n")) {
+      const spaceIdx = line.indexOf(" ")
+      if (spaceIdx === -1) continue
+      if (Number(line.slice(0, spaceIdx)) === clientPid) {
+        sessionName = line.slice(spaceIdx + 1)
+        break
+      }
+    }
+    if (!sessionName) return []
+
+    const panesProc = Bun.spawn(["tmux", "list-panes", "-s", "-t", sessionName, "-F", "#{pane_pid}"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const panesOutput = await new Response(panesProc.stdout).text()
+    if ((await panesProc.exited) !== 0) return []
+
+    const names: string[] = []
+    for (const line of panesOutput.trim().split("\n").filter(Boolean)) {
+      const panePid = Number(line)
+      if (isNaN(panePid)) continue
+      const comm = (await readFile(`/proc/${panePid}/comm`, "utf-8").catch(() => "")).trim()
+      if (comm) names.push(comm)
+      names.push(...(await getChildProcessNames(panePid)))
+    }
+    return names
+  } catch {
+    return []
+  }
+}
+
 async function getChildProcessNames(pid: number, depth = 4): Promise<string[]> {
   if (depth <= 0) return []
 
@@ -46,6 +87,11 @@ async function getChildProcessNames(pid: number, depth = 4): Promise<string[]> {
     try {
       const comm = (await readFile(`/proc/${childPid}/comm`, "utf-8")).trim()
       names.push(comm)
+
+      if (comm === "tmux") {
+        names.push(...(await getTmuxPaneProcessNames(childPid)))
+      }
+
       const grandchildren = await getChildProcessNames(childPid, depth - 1)
       names.push(...grandchildren)
     } catch {}

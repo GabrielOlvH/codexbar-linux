@@ -5,7 +5,7 @@ import { existsSync } from "fs"
 import type { ProviderUsage } from "../types"
 
 const DB_PATH = join(homedir(), ".config", "Cursor", "User", "globalStorage", "state.vscdb")
-const USAGE_URL = "https://api2.cursor.sh/auth/usage"
+const USAGE_URL = "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage"
 const PROFILE_URL = "https://api2.cursor.sh/auth/full_stripe_profile"
 
 function readDbValue(key: string): string | null {
@@ -20,6 +20,25 @@ function readDbValue(key: string): string | null {
   }
 }
 
+interface PlanUsage {
+  totalSpend?: number
+  includedSpend?: number
+  remaining?: number
+  limit?: number
+}
+
+interface SpendLimitUsage {
+  individualLimit?: number
+  individualRemaining?: number
+}
+
+interface UsageResponse {
+  billingCycleEnd?: string
+  planUsage?: PlanUsage
+  spendLimitUsage?: SpendLimitUsage
+  enabled?: boolean
+}
+
 export async function fetchCursor(): Promise<ProviderUsage> {
   const base: ProviderUsage = { id: "cursor", name: "Cursor", available: false }
 
@@ -31,14 +50,12 @@ export async function fetchCursor(): Promise<ProviderUsage> {
   base.available = true
 
   const email = readDbValue("cursorAuth/cachedEmail") ?? undefined
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    "x-cursor-client-version": "2.3.35",
-  }
 
   let plan: string | undefined
   try {
-    const profileResp = await fetch(PROFILE_URL, { headers })
+    const profileResp = await fetch(PROFILE_URL, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
     if (profileResp.ok) {
       const profile = (await profileResp.json()) as { membershipType?: string }
       plan = profile.membershipType
@@ -48,34 +65,57 @@ export async function fetchCursor(): Promise<ProviderUsage> {
   plan ??= readDbValue("cursorAuth/stripeMembershipType") ?? undefined
 
   try {
-    const resp = await fetch(USAGE_URL, { headers })
+    const resp = await fetch(USAGE_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "Connect-Protocol-Version": "1",
+      },
+      body: JSON.stringify({}),
+    })
 
     if (!resp.ok) {
       return { ...base, error: `API ${resp.status}`, account: { email, plan } }
     }
 
-    const usage = (await resp.json()) as Record<string, unknown>
-    const gpt4 = usage["gpt-4"] as { numRequests?: number; maxRequestUsage?: number | null } | undefined
-    const maxRequests = gpt4?.maxRequestUsage
+    const usage = (await resp.json()) as UsageResponse
+    const spendLimit = usage.spendLimitUsage?.individualLimit
+      ? `$${(usage.spendLimitUsage.individualLimit / 100).toFixed(0)} limit`
+      : undefined
+    const planLabel = [plan, spendLimit].filter(Boolean).join(" · ")
 
     const result: ProviderUsage = {
       ...base,
-      account: { email, plan },
+      account: { email, plan: planLabel || plan },
     }
 
-    if (maxRequests && maxRequests > 0 && gpt4?.numRequests != null) {
-      const startOfMonth = usage.startOfMonth as string | undefined
-      let resetsAt: string | undefined
-      if (startOfMonth) {
-        const end = new Date(startOfMonth)
-        end.setMonth(end.getMonth() + 1)
-        resetsAt = end.toISOString()
-      }
+    let resetsAt: string | undefined
+    if (usage.billingCycleEnd) {
+      resetsAt = new Date(Number(usage.billingCycleEnd)).toISOString()
+    }
+
+    if (usage.planUsage && usage.planUsage.limit && usage.planUsage.limit > 0) {
+      const limitDollars = usage.planUsage.limit / 100
+      const usedDollars = (usage.planUsage.totalSpend ?? 0) / 100
+      const pct = Math.round((usedDollars / limitDollars) * 100)
 
       result.primary = {
-        percent_used: Math.round((gpt4.numRequests / maxRequests) * 100),
+        percent_used: pct,
         resets_at: resetsAt,
-        label: "Premium Requests",
+        label: `Plan ($${usedDollars.toFixed(2)} / $${limitDollars.toFixed(2)})`,
+      }
+    }
+
+    if (usage.spendLimitUsage && usage.spendLimitUsage.individualLimit && usage.spendLimitUsage.individualLimit > 0) {
+      const limitDollars = usage.spendLimitUsage.individualLimit / 100
+      const usedDollars = limitDollars - (usage.spendLimitUsage.individualRemaining ?? 0) / 100
+      const pct = Math.round((usedDollars / limitDollars) * 100)
+
+      result.secondary = {
+        percent_used: pct,
+        resets_at: resetsAt,
+        label: `Limit ($${usedDollars.toFixed(2)} / $${limitDollars.toFixed(2)})`,
       }
     }
 
